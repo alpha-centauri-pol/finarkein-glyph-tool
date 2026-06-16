@@ -32,7 +32,9 @@ the original sketch). Whichever band's range contains that value decides which g
 ## Controls
 
 - **Source** — load an image/video, drag-and-drop, or use the built-in demo.
-- **Grid** — tile count, output size, glyph scale, fit (stretch vs cover/crop).
+- **Grid** — tile count, output size, glyph scale, fit (stretch / cover / contain).
+- **Transform** — zoom, offset X/Y and rotation of the source before sampling.
+  Drag the preview to pan, scroll to zoom.
 - **Sampling & mapping** — sample mode (top-left / center / average), brightness mode
   (`max(R,G,B)` vs perceptual luma), relative-mapping toggle, invert.
 - **Background** — color.

@@ -126,8 +126,18 @@
       <select id="fit">
         <option value="stretch" selected>Stretch to square (original)</option>
         <option value="cover">Cover / crop</option>
+        <option value="contain">Contain / fit inside</option>
       </select>
     </div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Transform <button id="resetTf" style="padding:2px 7px;font-size:10px">reset</button></div>
+    <div class="row"><label>Zoom</label><input id="zoom" type="range" min="0.1" max="5" step="0.01" value="1"><span class="val" id="zoom_v">1.00</span></div>
+    <div class="row"><label>Offset X</label><input id="offx" type="range" min="-1" max="1" step="0.002" value="0"><span class="val" id="offx_v">0%</span></div>
+    <div class="row"><label>Offset Y</label><input id="offy" type="range" min="-1" max="1" step="0.002" value="0"><span class="val" id="offy_v">0%</span></div>
+    <div class="row"><label>Rotate</label><input id="rot" type="range" min="-180" max="180" step="1" value="0"><span class="val" id="rot_v">0°</span></div>
+    <div class="hint">Drag the preview to pan · scroll to zoom. These move the source <em>before</em> sampling, so the glyph grid follows.</div>
   </div>
 
   <div class="group">
@@ -248,6 +258,10 @@ bind('tiles','tiles');
 bind('size','size');
 bind('scale','scale',v=>v.toFixed(2));
 bind('fit','fit');
+bind('zoom','zoom',v=>v.toFixed(2));
+bind('offx','offx',v=>Math.round(v*100)+'%');
+bind('offy','offy',v=>Math.round(v*100)+'%');
+bind('rot','rot',v=>v+'°');
 bind('sample','sample');
 bind('bmode','bmode');
 bind('relative','relative');
@@ -289,12 +303,23 @@ function resizeCanvas(){ cv.width=cv.height=Math.round(cfg.size); render(); }
 /* ---------- drawing the source square (handles fit) ---------- */
 function drawSourceTo(c, S){
   const el=media.el, sw=media.w, sh=media.h;
+  c.save();
+  // user transform (zoom / pan / rotate), about the square's centre
+  c.translate(S/2, S/2);
+  c.rotate(cfg.rot*Math.PI/180);
+  c.scale(cfg.zoom, cfg.zoom);
+  c.translate(cfg.offx*S, cfg.offy*S);
+  c.translate(-S/2, -S/2);
   if(cfg.fit==='cover'){
     const s=Math.max(S/sw, S/sh), dw=sw*s, dh=sh*s;
+    c.drawImage(el,(S-dw)/2,(S-dh)/2,dw,dh);
+  }else if(cfg.fit==='contain'){
+    const s=Math.min(S/sw, S/sh), dw=sw*s, dh=sh*s;
     c.drawImage(el,(S-dw)/2,(S-dh)/2,dw,dh);
   }else{
     c.drawImage(el,0,0,S,S);              // stretch — matches img.resize(width,height)
   }
+  c.restore();
 }
 function brightnessOf(r,g,b){ return cfg.bmode==='luma' ? (0.2126*r+0.7152*g+0.0722*b) : Math.max(r,g,b); }
 
@@ -464,11 +489,39 @@ $('randomize').onclick=()=>{
   bands.forEach(b=>b.color=rnd()); buildBands(); render();
 };
 
+/* ---------- transform helpers ---------- */
+function setCtl(id,v){ const el=$(id); el.value=v; el.dispatchEvent(new Event('input')); }
+const TF_DEFAULTS={zoom:1,offx:0,offy:0,rot:0};
+function resetTransform(){ for(const k in TF_DEFAULTS) setCtl(k,TF_DEFAULTS[k]); }
+$('resetTf').onclick=resetTransform;
+
 $('reset').onclick=()=>{
-  const d={tiles:72,size:1080,scale:1,fit:'stretch',sample:'topleft',bmode:'max',relative:true,invert:false,bg:'#FFFCF5'};
+  const d={tiles:72,size:1080,scale:1,fit:'stretch',sample:'topleft',bmode:'max',relative:true,invert:false,bg:'#FFFCF5',...TF_DEFAULTS};
   for(const k in d){ const el=$(k); if(el.type==='checkbox')el.checked=d[k]; else el.value=d[k]; el.dispatchEvent(new Event('input')); }
   bands=structuredClone(DEFAULT_BANDS); buildBands(); resizeCanvas();
 };
+
+/* ---------- pan (drag) & zoom (wheel) directly on the preview ---------- */
+let dragging=false, lastX=0, lastY=0;
+cv.style.cursor='grab';
+cv.addEventListener('pointerdown',e=>{ if(!media)return; dragging=true; lastX=e.clientX; lastY=e.clientY; cv.setPointerCapture(e.pointerId); cv.style.cursor='grabbing'; });
+cv.addEventListener('pointermove',e=>{
+  if(!dragging)return;
+  const r=cv.getBoundingClientRect();
+  // convert screen-pixel delta to source-space fraction (offset is applied inside zoom)
+  cfg.offx += (e.clientX-lastX)/r.width / cfg.zoom;
+  cfg.offy += (e.clientY-lastY)/r.height / cfg.zoom;
+  cfg.offx=Math.max(-1,Math.min(1,cfg.offx)); cfg.offy=Math.max(-1,Math.min(1,cfg.offy));
+  setCtl('offx',cfg.offx); setCtl('offy',cfg.offy);
+  lastX=e.clientX; lastY=e.clientY;
+});
+const endDrag=()=>{ dragging=false; cv.style.cursor='grab'; };
+cv.addEventListener('pointerup',endDrag); cv.addEventListener('pointercancel',endDrag);
+cv.addEventListener('wheel',e=>{
+  if(!media)return; e.preventDefault();
+  const z=Math.max(0.1,Math.min(5, cfg.zoom*(e.deltaY<0?1.08:1/1.08)));
+  setCtl('zoom', z.toFixed(3));
+},{passive:false});
 
 /* drag & drop */
 const wrap=$('canvasWrap'), drop=$('drop');
