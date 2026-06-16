@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finarkein · Glyph Tool</title>
+<meta name="description" content="Turn any image or video into a grid of glyphs driven by relative brightness. Live preview, full control, PNG / SVG / WebM export.">
+<meta name="theme-color" content="#1a1814">
+<meta property="og:title" content="Finarkein · Glyph Tool">
+<meta property="og:description" content="Relative-brightness halftone generator. Image & video → circles, crosses, squares. Export PNG / SVG / WebM.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Crect width='18' height='18' rx='4' fill='%231a1814'/%3E%3Ccircle cx='9' cy='9' r='5' fill='%23D8FF5B'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#161310; --panel:#211e18; --panel2:#2a261f; --line:#3a362d;
+    --txt:#f3eee2; --mut:#9c9485; --acc:#D8FF5B; --acc2:#6ED0E0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg);color:var(--txt);
+    font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;height:100dvh;overflow:hidden;
+  }
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:2px solid var(--panel)}
+  /* ---- panel ---- */
+  #panel{
+    width:336px;flex:0 0 336px;height:100%;overflow-y:auto;
+    background:var(--panel);border-right:1px solid var(--line);padding:16px 16px 40px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:3px}
+  .brand svg{flex:0 0 26px}
+  .brand h1{font-size:15px;margin:0;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:11px;margin:0 0 14px}
+  .sub code{color:var(--acc2)}
+  .group{border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:11px;background:var(--panel2)}
+  .group>.gh{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--mut);margin-bottom:9px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .row{display:flex;align-items:center;gap:8px;margin:7px 0}
+  .row label{flex:0 0 90px;color:var(--mut);font-size:11px}
+  input[type=range]{flex:1;accent-color:var(--acc);min-width:0;height:18px}
+  .row .val{flex:0 0 46px;text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
+  input[type=color]{width:30px;height:24px;border:1px solid var(--line);border-radius:5px;background:none;padding:0;cursor:pointer}
+  select,button{font:inherit;color:var(--txt);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;cursor:pointer}
+  select{flex:1}
+  button{transition:.12s}
+  button:hover{border-color:var(--mut);background:#322d25}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.5;cursor:default}
+  .btn-acc{background:var(--acc);color:#161310;border-color:var(--acc);font-weight:600}
+  .btn-acc:hover{filter:brightness(1.06);background:var(--acc)}
+  .btnrow{display:flex;gap:7px;flex-wrap:wrap}
+  .btnrow button{flex:1;justify-content:center;text-align:center;min-width:80px}
+  .band{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;background:rgba(0,0,0,.16)}
+  .band .top{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .band .top select{flex:1}
+  .chk{display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--mut);font-size:11px;user-select:none}
+  .hint{color:var(--mut);font-size:10.5px;margin-top:5px;line-height:1.5}
+  .tag{font-size:10px;background:var(--line);color:var(--txt);border-radius:4px;padding:1px 5px;white-space:nowrap}
+  /* ---- stage ---- */
+  #stage{flex:1;display:flex;flex-direction:column;height:100%;min-width:0}
+  #toolbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  #toolbar .spacer{flex:1}
+  #status{color:var(--mut);font-size:11px;font-variant-numeric:tabular-nums}
+  a.ghlink{color:var(--mut);text-decoration:none;border:1px solid var(--line);border-radius:7px;padding:6px 9px;display:inline-flex;align-items:center;gap:6px}
+  a.ghlink:hover{color:var(--txt);border-color:var(--mut)}
+  #menuBtn{display:none}
+  #canvasWrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:20px;position:relative;background:
+    radial-gradient(circle at 50% 30%, #211e18, var(--bg) 70%)}
+  #drop{
+    position:absolute;inset:20px;border:2px dashed var(--line);border-radius:16px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    color:var(--mut);text-align:center;pointer-events:none;transition:.15s;
+  }
+  #drop.hot{border-color:var(--acc);color:var(--acc);background:rgba(216,255,91,.05)}
+  #drop.hide{opacity:0;visibility:hidden}
+  #drop b{color:var(--txt);font-size:15px}
+  canvas#cv{max-width:100%;max-height:100%;background:#000;border-radius:10px;box-shadow:0 10px 50px rgba(0,0,0,.55)}
+  video{display:none}
+  .vidctl{display:flex;align-items:center;gap:8px;width:100%}
+  .vidctl input[type=range]{accent-color:var(--acc2)}
+  .recdot{width:9px;height:9px;border-radius:50%;background:#ff5b5b;display:inline-block;animation:pulse 1s infinite;vertical-align:middle;margin-right:5px}
+  @keyframes pulse{50%{opacity:.25}}
+  a.dl{display:none}
+  @media(max-width:760px){
+    #panel{position:fixed;z-index:30;left:0;top:0;transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 60px rgba(0,0,0,.6)}
+    body.menu #panel{transform:none}
+    #menuBtn{display:inline-flex}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== CONTROL PANEL ===================== -->
+<div id="panel">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 18 18"><rect width="18" height="18" rx="4" fill="#2a261f"/><circle cx="9" cy="9" r="5" fill="#D8FF5B"/></svg>
+    <h1>Finarkein · Glyph Tool</h1>
+  </div>
+  <p class="sub">Relative-brightness glyph grid · from <code>course_08.pde</code></p>
+
+  <div class="group">
+    <div class="gh">Source</div>
+    <div class="btnrow">
+      <button id="pick" class="btn-acc">Load image / video…</button>
+      <button id="demo" title="Load the built-in demo image">Demo</button>
+    </div>
+    <input id="file" type="file" accept="image/*,video/*" hidden>
+    <div id="vidBox" style="display:none;margin-top:9px">
+      <div class="vidctl">
+        <button id="play" title="play / pause" style="flex:0 0 auto">▶</button>
+        <input id="seek" type="range" min="0" max="1000" value="0">
+        <span class="tag" id="time">0:00</span>
+      </div>
+      <div class="hint">Scrub to pick a frame, or render the whole clip to WebM in Export.</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Grid</div>
+    <div class="row"><label>Tiles</label><input id="tiles" type="range" min="8" max="200" value="72"><span class="val" id="tiles_v">72</span></div>
+    <div class="row"><label>Output size</label><input id="size" type="range" min="256" max="2160" step="8" value="1080"><span class="val" id="size_v">1080</span></div>
+    <div class="row"><label>Glyph scale</label><input id="scale" type="range" min="0.2" max="1.6" step="0.01" value="1"><span class="val" id="scale_v">1.00</span></div>
+    <div class="row"><label>Fit</label>
+      <select id="fit">
+        <option value="stretch" selected>Stretch to square (original)</option>
+        <option value="cover">Cover / crop</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Sampling &amp; mapping</div>
+    <div class="row"><label>Sample</label>
+      <select id="sample">
+        <option value="topleft" selected>Top-left pixel (original)</option>
+        <option value="center">Center pixel</option>
+        <option value="avg">Tile average</option>
+      </select>
+    </div>
+    <div class="row"><label>Brightness</label>
+      <select id="bmode">
+        <option value="max" selected>max(R,G,B) — Processing</option>
+        <option value="luma">Perceptual luma</option>
+      </select>
+    </div>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="relative" checked> Relative mapping <span class="tag">b · min→max ⇒ 0–100</span></label>
+    <label class="chk" style="margin:8px 0"><input type="checkbox" id="invert"> Invert brightness</label>
+    <div class="hint">Relative mapping stretches each frame's own darkest→brightest across 0–100, exactly like the sketch. Turn off for absolute 0–100.</div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Background</div>
+    <div class="row"><label>Color</label><input type="color" id="bg" value="#FFFCF5"><span class="val" id="bg_v">#FFFCF5</span></div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Bands <span class="tag">brightness 0–100</span></div>
+    <div id="bands"></div>
+    <div class="btnrow" style="margin-top:8px">
+      <button id="randomize">Randomize colors</button>
+    </div>
+    <div class="hint">Each tile draws the first enabled band whose range contains its brightness. Defaults reproduce the sketch — the 45–50 gap leaves some tiles empty.</div>
+  </div>
+
+  <div class="group">
+    <div class="gh">Export</div>
+    <div class="btnrow" style="margin-bottom:7px">
+      <button id="dlPng" class="btn-acc">PNG</button>
+      <button id="dlSvg" class="btn-acc">SVG</button>
+    </div>
+    <div class="btnrow">
+      <button id="dlWebm">Render video → WebM</button>
+    </div>
+    <div class="hint">SVG export uses the real circle / cross / square vector paths.</div>
+  </div>
+</div>
+
+<!-- ===================== STAGE ===================== -->
+<div id="stage">
+  <div id="toolbar">
+    <button id="menuBtn" title="controls">☰</button>
+    <button id="reset">Reset defaults</button>
+    <div class="spacer"></div>
+    <div id="status">Loading demo…</div>
+    <a class="ghlink" id="ghlink" href="#" target="_blank" rel="noopener" title="Source on GitHub">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+  <div id="canvasWrap">
+    <canvas id="cv" width="1080" height="1080"></canvas>
+    <div id="drop"><b>Drop an image or video</b><span>or click “Load image / video…”</span></div>
+  </div>
+</div>
+
+<video id="vid" playsinline muted crossorigin="anonymous"></video>
+<a id="dl" class="dl"></a>
+
+<script>
+"use strict";
+const REPO = "https://github.com/alpha-centauri-pol/finarkein-glyph-tool";
+
+/* ---------- glyph geometry (18×18 viewBox, from the source SVGs) ---------- */
+const SHAPES = {
+  circle: { svg:'<circle cx="9" cy="9" r="6"/>' },
+  cross:  { d:"M14.766 3.234c-.73-.73-2.994.296-5.498 2.362a.423.423 0 0 1-.536 0c-2.504-2.06-4.768-3.091-5.498-2.362-.73.73.296 2.994 2.362 5.498a.423.423 0 0 1 0 .536c-2.06 2.504-3.091 4.768-2.362 5.498.73.73 2.994-.296 5.498-2.362a.423.423 0 0 1 .536 0c2.504 2.06 4.768 3.091 5.498 2.362.73-.73-.296-2.994-2.362-5.498a.423.423 0 0 1 0-.536c2.06-2.504 3.091-4.768 2.362-5.498Z" },
+  square: { d:"M9.008 15c4.712-.005 5.997-1.295 5.992-6.008C14.99 4.275 13.705 2.995 8.992 3 4.28 3.005 2.995 4.295 3 9.008 3.005 13.72 4.295 15.005 9.008 15Z" },
+  none:   {}
+};
+SHAPES.circle.path = (()=>{const p=new Path2D();p.arc(9,9,6,0,Math.PI*2);return p;})();
+SHAPES.cross.path  = new Path2D(SHAPES.cross.d);
+SHAPES.square.path = new Path2D(SHAPES.square.d);
+
+/* ---------- default bands (from the sketch's if/else thresholds) ---------- */
+const DEFAULT_BANDS = [
+  { shape:"cross",  color:"#65B75A", min:0,  max:25,  on:true },
+  { shape:"square", color:"#6ED0E0", min:25, max:45,  on:true },
+  { shape:"circle", color:"#D8FF5B", min:50, max:100, on:true },
+];
+let bands = structuredClone(DEFAULT_BANDS);
+
+/* ---------- state ---------- */
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d', { willReadFrequently:true });
+const vid = document.getElementById('vid');
+let media = null;          // {type:'image'|'video', el, w, h}
+const sampleCanvas = document.createElement('canvas');
+const sctx = sampleCanvas.getContext('2d', { willReadFrequently:true });
+const $ = id => document.getElementById(id);
+document.getElementById('ghlink').href = REPO;
+
+/* ---------- control binding ---------- */
+const cfg = {};
+function readEl(el){ return el.type==='checkbox'?el.checked:(el.type==='range'?parseFloat(el.value):el.value); }
+function bind(id, key, fmt){
+  const el=$(id), out=$(id+'_v');
+  cfg[key]=readEl(el);
+  if(out) out.textContent=fmt?fmt(cfg[key]):cfg[key];
+  el.addEventListener('input',()=>{
+    cfg[key]=readEl(el);
+    if(out) out.textContent=fmt?fmt(cfg[key]):cfg[key];
+    if(key==='size') resizeCanvas(); else render();
+  });
+}
+bind('tiles','tiles');
+bind('size','size');
+bind('scale','scale',v=>v.toFixed(2));
+bind('fit','fit');
+bind('sample','sample');
+bind('bmode','bmode');
+bind('relative','relative');
+bind('invert','invert');
+bind('bg','bg',v=>v.toUpperCase());
+
+/* ---------- bands UI ---------- */
+function buildBands(){
+  const wrap=$('bands'); wrap.innerHTML='';
+  bands.forEach((b,i)=>{
+    const el=document.createElement('div'); el.className='band';
+    el.innerHTML=`
+      <div class="top">
+        <label class="chk" title="enable band"><input type="checkbox" data-i="${i}" data-k="on" ${b.on?'checked':''}></label>
+        <select data-i="${i}" data-k="shape">
+          ${['circle','cross','square','none'].map(s=>`<option ${b.shape===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <input type="color" data-i="${i}" data-k="color" value="${b.color}">
+      </div>
+      <div class="row"><label>From</label><input type="range" min="0" max="100" value="${b.min}" data-i="${i}" data-k="min"><span class="val">${b.min}</span></div>
+      <div class="row"><label>To</label><input type="range" min="0" max="100" value="${b.max}" data-i="${i}" data-k="max"><span class="val">${b.max}</span></div>`;
+    wrap.appendChild(el);
+  });
+  wrap.querySelectorAll('input,select').forEach(inp=>{
+    inp.addEventListener('input',e=>{
+      const i=+e.target.dataset.i, k=e.target.dataset.k;
+      const v=e.target.type==='checkbox'?e.target.checked:(e.target.type==='range'?+e.target.value:e.target.value);
+      bands[i][k]=v;
+      if(e.target.type==='range') e.target.nextElementSibling.textContent=v;
+      render();
+    });
+  });
+}
+buildBands();
+
+/* ---------- canvas sizing ---------- */
+function resizeCanvas(){ cv.width=cv.height=Math.round(cfg.size); render(); }
+
+/* ---------- drawing the source square (handles fit) ---------- */
+function drawSourceTo(c, S){
+  const el=media.el, sw=media.w, sh=media.h;
+  if(cfg.fit==='cover'){
+    const s=Math.max(S/sw, S/sh), dw=sw*s, dh=sh*s;
+    c.drawImage(el,(S-dw)/2,(S-dh)/2,dw,dh);
+  }else{
+    c.drawImage(el,0,0,S,S);              // stretch — matches img.resize(width,height)
+  }
+}
+function brightnessOf(r,g,b){ return cfg.bmode==='luma' ? (0.2126*r+0.7152*g+0.0722*b) : Math.max(r,g,b); }
+
+/* ---------- compute per-tile brightness ---------- */
+function computeTiles(N){
+  const SR = cfg.sample==='avg' ? Math.min(N*3, 600) : N;
+  sampleCanvas.width=SR; sampleCanvas.height=SR;
+  sctx.fillStyle='#000'; sctx.fillRect(0,0,SR,SR);
+  drawSourceTo(sctx, SR);
+  const data=sctx.getImageData(0,0,SR,SR).data;
+  const cell=SR/N;
+  const bt=new Float32Array(N*N); let minB=1e9,maxB=-1e9;
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++){
+    let b;
+    if(cfg.sample==='avg'){
+      let r=0,g=0,bl=0,n=0;
+      const x0=Math.floor(x*cell),y0=Math.floor(y*cell),x1=Math.max(x0+1,Math.floor((x+1)*cell)),y1=Math.max(y0+1,Math.floor((y+1)*cell));
+      for(let px=x0;px<x1;px++)for(let py=y0;py<y1;py++){const o=(py*SR+px)*4;r+=data[o];g+=data[o+1];bl+=data[o+2];n++;}
+      b=brightnessOf(r/n,g/n,bl/n);
+    }else{
+      const fx=cfg.sample==='center'?Math.floor((x+0.5)*cell):Math.floor(x*cell);
+      const fy=cfg.sample==='center'?Math.floor((y+0.5)*cell):Math.floor(y*cell);
+      const o=(Math.min(fy,SR-1)*SR+Math.min(fx,SR-1))*4;
+      b=brightnessOf(data[o],data[o+1],data[o+2]);
+    }
+    if(cfg.invert) b=255-b;
+    bt[x*N+y]=b; if(b<minB)minB=b; if(b>maxB)maxB=b;
+  }
+  return {bt,minB,maxB};
+}
+function relValue(b,minB,maxB){
+  return cfg.relative ? (maxB>minB ? (b-minB)/(maxB-minB)*100 : 0) : b/255*100;
+}
+function bandFor(rel){ return bands.find(b=>b.on && b.shape!=='none' && rel>=b.min && rel<b.max); }
+
+/* ---------- render one frame to the visible canvas ---------- */
+function render(){
+  ctx.fillStyle=cfg.bg; ctx.fillRect(0,0,cv.width,cv.height);
+  if(!media) return;
+  if(media.type==='video' && (!media.w)){ media.w=vid.videoWidth; media.h=vid.videoHeight; }
+  if(!media.w||!media.h) return;
+  const N=Math.round(cfg.tiles), S=cv.width, tile=S/N, sc=cfg.scale;
+  const {bt,minB,maxB}=computeTiles(N);
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++){
+    const band=bandFor(relValue(bt[x*N+y],minB,maxB));
+    if(!band) continue;
+    const off=tile*(1-sc)/2;
+    ctx.save();
+    ctx.translate(x*tile+off, y*tile+off);
+    ctx.scale(tile/18*sc, tile/18*sc);
+    ctx.fillStyle=band.color;
+    ctx.fill(SHAPES[band.shape].path);
+    ctx.restore();
+  }
+}
+
+/* ---------- SVG export (real vector paths) ---------- */
+function buildSVG(){
+  const N=Math.round(cfg.tiles), S=Math.round(cfg.size), tile=S/N, sc=cfg.scale;
+  const {bt,minB,maxB}=computeTiles(N);
+  const defs=`<symbol id="circle" viewBox="0 0 18 18">${SHAPES.circle.svg}</symbol>`
+            +`<symbol id="cross" viewBox="0 0 18 18"><path d="${SHAPES.cross.d}"/></symbol>`
+            +`<symbol id="square" viewBox="0 0 18 18"><path d="${SHAPES.square.d}"/></symbol>`;
+  let body='';
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++){
+    const band=bandFor(relValue(bt[x*N+y],minB,maxB));
+    if(!band) continue;
+    const sz=tile*sc, off=tile*(1-sc)/2;
+    body+=`<use href="#${band.shape}" x="${(x*tile+off).toFixed(2)}" y="${(y*tile+off).toFixed(2)}" width="${sz.toFixed(2)}" height="${sz.toFixed(2)}" fill="${band.color}"/>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}"><defs>${defs}</defs><rect width="${S}" height="${S}" fill="${cfg.bg}"/>${body}</svg>`;
+}
+
+/* ---------- downloads ---------- */
+function download(blob,name){
+  const a=$('dl'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+$('dlPng').onclick=()=>{ if(!media)return alert('Load a source first.'); render(); cv.toBlob(b=>download(b,'glyphs.png'),'image/png'); };
+$('dlSvg').onclick=()=>{ if(!media)return alert('Load a source first.'); download(new Blob([buildSVG()],{type:'image/svg+xml'}),'glyphs.svg'); };
+
+/* ---------- video → WebM ---------- */
+$('dlWebm').onclick=async()=>{
+  if(!media||media.type!=='video') return alert('Load a video first.');
+  if(!window.MediaRecorder) return alert('MediaRecorder not supported in this browser.');
+  const btn=$('dlWebm'); btn.disabled=true;
+  const stream=cv.captureStream(30);
+  const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:12e6});
+  const chunks=[]; rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  rec.onstop=()=>{ download(new Blob(chunks,{type:'video/webm'}),'glyphs.webm'); btn.disabled=false; btn.textContent='Render video → WebM'; setStatus('WebM exported.'); };
+  vid.pause(); vid.currentTime=0;
+  await new Promise(r=>vid.addEventListener('seeked',r,{once:true}));
+  rec.start();
+  const dur=vid.duration;
+  const tick=()=>{
+    render();
+    if(vid.currentTime>=dur-0.05||vid.ended){ rec.stop(); return; }
+    btn.innerHTML=`<span class="recdot"></span>${Math.round(vid.currentTime/dur*100)}%`;
+    requestAnimationFrame(tick);
+  };
+  vid.play().then(tick).catch(()=>{rec.stop();});
+};
+
+/* ---------- source loading ---------- */
+function setStatus(t){ $('status').textContent=t; }
+function fmtTime(s){ const m=Math.floor(s/60); s=Math.floor(s%60); return m+':'+String(s).padStart(2,'0'); }
+function showDrop(show){ $('drop').classList.toggle('hide',!show); }
+
+function loadFile(f){
+  if(!f) return;
+  const url=URL.createObjectURL(f);
+  if(f.type.startsWith('video')){
+    vid.src=url;
+    vid.onloadedmetadata=()=>{
+      media={type:'video',el:vid,w:vid.videoWidth,h:vid.videoHeight};
+      $('vidBox').style.display='block'; showDrop(false);
+      setStatus(`Video ${vid.videoWidth}×${vid.videoHeight} · ${vid.duration.toFixed(1)}s`);
+      vid.currentTime=0;
+    };
+    vid.onseeked=render;
+    vid.ontimeupdate=()=>{ $('seek').value=(vid.currentTime/vid.duration*1000)||0; $('time').textContent=fmtTime(vid.currentTime); if(!vid.paused)render(); };
+    vid.onended=()=>$('play').textContent='▶';
+  }else{
+    const im=new Image();
+    im.onload=()=>{ media={type:'image',el:im,w:im.naturalWidth,h:im.naturalHeight}; $('vidBox').style.display='none'; showDrop(false); setStatus(`Image ${im.naturalWidth}×${im.naturalHeight}`); render(); };
+    im.onerror=()=>setStatus('Could not load that file.');
+    im.src=url;
+  }
+}
+
+/* ---------- built-in demo (procedural, so it works on the deployed site) ---------- */
+function makeDemo(){
+  const c=document.createElement('canvas'); c.width=c.height=720;
+  const g=c.getContext('2d');
+  g.fillStyle='#0b0b12'; g.fillRect(0,0,720,720);
+  const rg=g.createRadialGradient(300,250,40, 360,360,520);
+  rg.addColorStop(0,'#fff'); rg.addColorStop(.4,'#9aa'); rg.addColorStop(1,'#0b0b12');
+  g.fillStyle=rg; g.fillRect(0,0,720,720);
+  // a few soft blobs for variety
+  for(const [x,y,r,a] of [[520,180,150,.6],[180,520,180,.5],[560,560,120,.45],[120,180,90,.4]]){
+    const b=g.createRadialGradient(x,y,5,x,y,r);
+    b.addColorStop(0,`rgba(255,255,255,${a})`); b.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=b; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+  }
+  g.font='bold 150px ui-sans-serif,system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillStyle='rgba(0,0,0,.55)'; g.fillText('F',360,380);
+  return c;
+}
+function loadDemo(){
+  const c=makeDemo();
+  media={type:'image',el:c,w:c.width,h:c.height};
+  $('vidBox').style.display='none'; showDrop(false); setStatus('Demo image · load your own to start');
+  render();
+}
+
+/* ---------- events ---------- */
+$('pick').onclick=()=>$('file').click();
+$('demo').onclick=loadDemo;
+$('file').onchange=e=>loadFile(e.target.files[0]);
+$('play').onclick=()=>{ if(vid.paused){vid.play();$('play').textContent='⏸';}else{vid.pause();$('play').textContent='▶';} };
+$('seek').oninput=e=>{ if(media&&media.type==='video') vid.currentTime=e.target.value/1000*vid.duration; };
+$('menuBtn').onclick=()=>document.body.classList.toggle('menu');
+
+$('randomize').onclick=()=>{
+  const rnd=()=> '#'+Array.from({length:3},()=>('0'+Math.floor(80+Math.random()*175).toString(16)).slice(-2)).join('');
+  bands.forEach(b=>b.color=rnd()); buildBands(); render();
+};
+
+$('reset').onclick=()=>{
+  const d={tiles:72,size:1080,scale:1,fit:'stretch',sample:'topleft',bmode:'max',relative:true,invert:false,bg:'#FFFCF5'};
+  for(const k in d){ const el=$(k); if(el.type==='checkbox')el.checked=d[k]; else el.value=d[k]; el.dispatchEvent(new Event('input')); }
+  bands=structuredClone(DEFAULT_BANDS); buildBands(); resizeCanvas();
+};
+
+/* drag & drop */
+const wrap=$('canvasWrap'), drop=$('drop');
+['dragenter','dragover'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>wrap.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');if(media)drop.classList.add('hide');}));
+wrap.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f)loadFile(f); });
+
+/* go */
+resizeCanvas();
+loadDemo();
+</script>
+</body>
+</html>
