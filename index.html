@@ -300,16 +300,9 @@ buildBands();
 /* ---------- canvas sizing ---------- */
 function resizeCanvas(){ cv.width=cv.height=Math.round(cfg.size); render(); }
 
-/* ---------- drawing the source square (handles fit) ---------- */
-function drawSourceTo(c, S){
+/* ---------- drawing the source square (fit only, no user transform) ---------- */
+function drawBaseFit(c, S){
   const el=media.el, sw=media.w, sh=media.h;
-  c.save();
-  // user transform (zoom / pan / rotate), about the square's centre
-  c.translate(S/2, S/2);
-  c.rotate(cfg.rot*Math.PI/180);
-  c.scale(cfg.zoom, cfg.zoom);
-  c.translate(cfg.offx*S, cfg.offy*S);
-  c.translate(-S/2, -S/2);
   if(cfg.fit==='cover'){
     const s=Math.max(S/sw, S/sh), dw=sw*s, dh=sh*s;
     c.drawImage(el,(S-dw)/2,(S-dh)/2,dw,dh);
@@ -319,16 +312,28 @@ function drawSourceTo(c, S){
   }else{
     c.drawImage(el,0,0,S,S);              // stretch — matches img.resize(width,height)
   }
+}
+/* with the user transform (zoom / pan / rotate) applied about the square's centre */
+function drawSourceTo(c, S){
+  c.save();
+  c.translate(S/2, S/2);
+  c.rotate(cfg.rot*Math.PI/180);
+  c.scale(cfg.zoom, cfg.zoom);
+  c.translate(cfg.offx*S, cfg.offy*S);
+  c.translate(-S/2, -S/2);
+  drawBaseFit(c, S);
   c.restore();
 }
 function brightnessOf(r,g,b){ return cfg.bmode==='luma' ? (0.2126*r+0.7152*g+0.0722*b) : Math.max(r,g,b); }
 
-/* ---------- compute per-tile brightness ---------- */
-function computeTiles(N){
+/* ---------- compute per-tile brightness ----------
+   useTransform=false samples the source WITHOUT zoom/pan/rotate, so the
+   relative-mapping reference stays fixed while you reposition the image. */
+function computeTiles(N, useTransform=true){
   const SR = cfg.sample==='avg' ? Math.min(N*3, 600) : N;
   sampleCanvas.width=SR; sampleCanvas.height=SR;
   sctx.fillStyle='#000'; sctx.fillRect(0,0,SR,SR);
-  drawSourceTo(sctx, SR);
+  (useTransform?drawSourceTo:drawBaseFit)(sctx, SR);
   const data=sctx.getImageData(0,0,SR,SR).data;
   const cell=SR/N;
   const bt=new Float32Array(N*N); let minB=1e9,maxB=-1e9;
@@ -350,8 +355,11 @@ function computeTiles(N){
   }
   return {bt,minB,maxB};
 }
-function relValue(b,minB,maxB){
-  return cfg.relative ? (maxB>minB ? (b-minB)/(maxB-minB)*100 : 0) : b/255*100;
+/* ref = {min,max} fixed reference for relative mapping (null → absolute 0–100) */
+function relValue(b, ref){
+  if(!ref) return b/255*100;
+  const v = ref.max>ref.min ? (b-ref.min)/(ref.max-ref.min)*100 : 0;
+  return v<0?0:v>100?100:v;          // clamp so off-image / out-of-range stays in band space
 }
 function bandFor(rel){ return bands.find(b=>b.on && b.shape!=='none' && rel>=b.min && rel<b.max); }
 
@@ -362,9 +370,12 @@ function render(){
   if(media.type==='video' && (!media.w)){ media.w=vid.videoWidth; media.h=vid.videoHeight; }
   if(!media.w||!media.h) return;
   const N=Math.round(cfg.tiles), S=cv.width, tile=S/N, sc=cfg.scale;
-  const {bt,minB,maxB}=computeTiles(N);
+  // fixed reference from the untransformed source, so panning/zooming the
+  // image doesn't re-normalise (and thus recolour) every tile
+  const ref = cfg.relative ? (r=>({min:r.minB,max:r.maxB}))(computeTiles(N,false)) : null;
+  const {bt}=computeTiles(N,true);
   for(let x=0;x<N;x++)for(let y=0;y<N;y++){
-    const band=bandFor(relValue(bt[x*N+y],minB,maxB));
+    const band=bandFor(relValue(bt[x*N+y],ref));
     if(!band) continue;
     const off=tile*(1-sc)/2;
     ctx.save();
@@ -379,13 +390,14 @@ function render(){
 /* ---------- SVG export (real vector paths) ---------- */
 function buildSVG(){
   const N=Math.round(cfg.tiles), S=Math.round(cfg.size), tile=S/N, sc=cfg.scale;
-  const {bt,minB,maxB}=computeTiles(N);
+  const ref = cfg.relative ? (r=>({min:r.minB,max:r.maxB}))(computeTiles(N,false)) : null;
+  const {bt}=computeTiles(N,true);
   const defs=`<symbol id="circle" viewBox="0 0 18 18">${SHAPES.circle.svg}</symbol>`
             +`<symbol id="cross" viewBox="0 0 18 18"><path d="${SHAPES.cross.d}"/></symbol>`
             +`<symbol id="square" viewBox="0 0 18 18"><path d="${SHAPES.square.d}"/></symbol>`;
   let body='';
   for(let x=0;x<N;x++)for(let y=0;y<N;y++){
-    const band=bandFor(relValue(bt[x*N+y],minB,maxB));
+    const band=bandFor(relValue(bt[x*N+y],ref));
     if(!band) continue;
     const sz=tile*sc, off=tile*(1-sc)/2;
     body+=`<use href="#${band.shape}" x="${(x*tile+off).toFixed(2)}" y="${(y*tile+off).toFixed(2)}" width="${sz.toFixed(2)}" height="${sz.toFixed(2)}" fill="${band.color}"/>`;
